@@ -1,0 +1,405 @@
+<title>Higher Lower Wheel</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bowlby+One&family=Figtree:wght@400;500;700&family=DM+Mono:wght@500&display=swap">
+<style>
+/* Layout: one centered play column. Score and progress on top, the wheel as the hero, then controls and a short spin history. */
+:root {
+  --bg: #e9eff5;
+  --surface: #ffffff;
+  --fg: #12202c;
+  --muted: #566879;
+  --line: #cfdae5;
+  --seg-a: #0d6f7a;
+  --seg-b: #373c8a;
+  --rim: #12202c;
+  --hub: #ffffff;
+  --hub-fg: #12202c;
+  --pointer: #d9382a;
+  --up: #1c7a52;
+  --down: #b63d2a;
+  --font-display: "Bowlby One", "Arial Black", Impact, sans-serif;
+  --font-body: "Figtree", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "DM Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0c151e;
+    --surface: #14212d;
+    --fg: #e8eef4;
+    --muted: #8da1b3;
+    --line: #26394a;
+    --seg-a: #0f7f8b;
+    --seg-b: #4a50a8;
+    --rim: #05090d;
+    --hub: #0c151e;
+    --hub-fg: #e8eef4;
+    --pointer: #ff5a47;
+    --up: #23895c;
+    --down: #c2472f;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0c151e;
+  --surface: #14212d;
+  --fg: #e8eef4;
+  --muted: #8da1b3;
+  --line: #26394a;
+  --seg-a: #0f7f8b;
+  --seg-b: #4a50a8;
+  --rim: #05090d;
+  --hub: #0c151e;
+  --hub-fg: #e8eef4;
+  --pointer: #ff5a47;
+  --up: #23895c;
+  --down: #c2472f;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.45;
+  padding-block: 24px 40px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.app {
+  max-width: 480px;
+  margin-inline: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+.app > * { min-width: 0; }
+
+header h1 {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: clamp(26px, 7vw, 34px);
+  line-height: 1.05;
+  margin: 0 0 6px;
+  text-wrap: balance;
+}
+header p { margin: 0; color: var(--muted); font-size: 14.5px; max-width: 46ch; }
+
+/* Score */
+.score { display: flex; flex-direction: column; gap: 10px; }
+.score-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.score-num { font-family: var(--font-display); font-size: 54px; line-height: 1; font-variant-numeric: tabular-nums; }
+.score-num small { font-family: var(--font-body); font-weight: 500; font-size: 16px; color: var(--muted); margin-left: 6px; }
+.score-meta { font-family: var(--font-mono); font-size: 13px; color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
+.bar { position: relative; height: 12px; background: var(--line); border-radius: 999px; overflow: hidden; }
+.bar-fill { height: 100%; width: 0; background: var(--seg-a); border-radius: 999px; transition: width .6s cubic-bezier(.2,.8,.2,1); }
+.ticks { position: relative; height: 14px; font-family: var(--font-mono); font-size: 11px; color: var(--muted); }
+.ticks span { position: absolute; top: 0; transform: translateX(-50%); font-variant-numeric: tabular-nums; }
+.ticks span:last-child { transform: translateX(-100%); }
+.bump { animation: bump .45s ease; }
+@keyframes bump { 40% { transform: scale(1.06); } }
+
+/* Wheel */
+.wheel-wrap { position: relative; width: 100%; max-width: 100%; aspect-ratio: 1; container-type: inline-size; }
+.wheel-wrap canvas { display: block; width: 100%; height: 100%; }
+.pointer {
+  position: absolute; top: -6px; left: 50%; transform: translateX(-50%); z-index: 2;
+  width: 0; height: 0;
+  border-left: 13px solid transparent; border-right: 13px solid transparent;
+  border-top: 26px solid var(--pointer);
+  filter: drop-shadow(0 2px 2px rgba(0,0,0,.35));
+}
+.hub {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  width: 27%; aspect-ratio: 1; border-radius: 50%;
+  background: var(--hub); color: var(--hub-fg);
+  border: 4px solid var(--rim);
+  display: grid; place-items: center; text-align: center;
+  font-family: var(--font-display); font-size: 11cqw; line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.hub-label {
+  position: absolute; bottom: 14%; left: 0; right: 0;
+  font-family: var(--font-body); font-weight: 700; font-size: 2.4cqw; letter-spacing: .08em; text-transform: uppercase; color: var(--muted);
+}
+
+/* Controls */
+.controls { display: flex; flex-direction: column; gap: 14px; }
+.msg { min-height: 3em; margin: 0; font-size: 16px; }
+.msg b { font-weight: 700; }
+.msg .good { color: var(--up); }
+.msg .bad { color: var(--down); }
+.btn-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.btn {
+  appearance: none; border: 0; cursor: pointer;
+  font-family: var(--font-body); font-weight: 700; font-size: 18px; color: #fff;
+  border-radius: 14px; padding: 14px 12px;
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  transition: transform .12s ease, opacity .2s ease;
+  min-height: 78px; justify-content: center;
+}
+.btn:hover:not(:disabled) { transform: translateY(-2px); }
+.btn:active:not(:disabled) { transform: translateY(0); }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+.btn:focus-visible { outline: 3px solid var(--fg); outline-offset: 3px; }
+.btn svg { width: 22px; height: 22px; }
+.btn .odds { font-family: var(--font-mono); font-weight: 500; font-size: 12.5px; opacity: .9; }
+.btn.higher { background: var(--up); }
+.btn.lower { background: var(--down); }
+.btn.solo { background: var(--fg); color: var(--bg); width: 100%; font-size: 19px; min-height: 64px; }
+
+.win {
+  background: var(--surface); border: 2px solid var(--fg); border-radius: 16px; padding: 20px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.win h2 { font-family: var(--font-display); font-weight: 400; font-size: 28px; margin: 0; line-height: 1.1; }
+.win p { margin: 0; color: var(--muted); }
+
+/* History */
+.history h3 { margin: 0 0 10px; font-size: 12px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); font-weight: 700; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; list-style: none; padding: 0; margin: 0; min-height: 38px; }
+.chip {
+  display: flex; align-items: baseline; gap: 8px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 6px 10px;
+  font-family: var(--font-mono); font-size: 14px; font-variant-numeric: tabular-nums;
+}
+.chip .d.good { color: var(--up); }
+.chip .d.bad { color: var(--down); }
+.chip .d.tie { color: var(--muted); }
+.empty { color: var(--muted); font-size: 14px; }
+
+.rules { font-size: 13.5px; color: var(--muted); margin: 0; padding-top: 14px; border-top: 1px solid var(--line); }
+
+@media (prefers-reduced-motion: reduce) {
+  .bar-fill { transition: none; }
+  .bump { animation: none; }
+  .btn { transition: none; }
+}
+</style>
+
+<main class="app">
+  <header>
+    <h1>Higher Lower Wheel</h1>
+    <p>Spin a number from 1 to 20, then bet on whether the next spin lands higher or lower. First to 120 points wins.</p>
+  </header>
+
+  <section class="score" aria-label="Score">
+    <div class="score-row">
+      <div class="score-num" id="scoreNum">0<small>/ 120</small></div>
+      <div class="score-meta" id="scoreMeta">0 spins</div>
+    </div>
+    <div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="120" aria-valuenow="0" id="bar">
+      <div class="bar-fill" id="barFill"></div>
+    </div>
+    <div class="ticks" aria-hidden="true"><span style="left:25%">30</span><span style="left:50%">60</span><span style="left:75%">90</span><span style="left:100%">120</span></div>
+  </section>
+
+  <section class="wheel-wrap" aria-label="Wheel of numbers 1 to 20">
+    <div class="pointer"></div>
+    <canvas id="wheel" role="img" aria-label="Spinning wheel with the numbers 1 to 20"></canvas>
+    <div class="hub"><span id="hubNum">?</span><span class="hub-label">Current</span></div>
+  </section>
+
+  <section class="controls">
+    <p class="msg" id="msg" aria-live="polite">Spin the wheel to get your starting number.</p>
+    <div id="startRow"><button class="btn solo" id="spinBtn" type="button">Spin to start</button></div>
+    <div class="btn-row" id="guessRow" hidden>
+      <button class="btn higher" id="higherBtn" type="button">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+        Higher <span class="odds" id="oddsUp"></span>
+      </button>
+      <button class="btn lower" id="lowerBtn" type="button">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12l7 7 7-7"/></svg>
+        Lower <span class="odds" id="oddsDown"></span>
+      </button>
+    </div>
+    <div class="win" id="winBox" hidden>
+      <h2>You hit 120</h2>
+      <p id="winText"></p>
+      <button class="btn solo" id="againBtn" type="button">Play again</button>
+    </div>
+  </section>
+
+  <section class="history" aria-label="Spin history">
+    <h3>Recent spins</h3>
+    <ul class="chips" id="chips"><li class="empty">Nothing yet.</li></ul>
+  </section>
+
+  <p class="rules">A correct guess scores the number the wheel lands on. A wrong guess costs 5 points, and your score never drops below 0. Landing on the same number changes nothing.</p>
+</main>
+
+<script>
+(function () {
+  var ORDER = [20,1,18,4,13,6,10,15,2,17,3,19,7,16,8,11,14,9,12,5];
+  var N = ORDER.length, SEG = 360 / N, TARGET = 120, PENALTY = 5;
+  var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  var state = { score: 0, current: null, spins: 0, rot: Math.random() * 360, spinning: false, over: false, history: [] };
+  var guess = null;
+
+  var $ = function (id) { return document.getElementById(id); };
+  var canvas = $('wheel'), ctx = canvas.getContext('2d');
+
+  function css(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+  function rad(d) { return d * Math.PI / 180; }
+
+  function draw() {
+    var dpr = window.devicePixelRatio || 1;
+    var size = canvas.clientWidth;
+    if (!size) return;
+    if (canvas.width !== Math.round(size * dpr)) { canvas.width = Math.round(size * dpr); canvas.height = Math.round(size * dpr); }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, size, size);
+    var cx = size / 2, cy = size / 2, R = size / 2 - 4, r = R - size * 0.03;
+    var segA = css('--seg-a'), segB = css('--seg-b'), rim = css('--rim');
+
+    ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.fillStyle = rim; ctx.fill();
+
+    for (var i = 0; i < N; i++) {
+      var mid = -90 + i * SEG + state.rot;
+      var a0 = rad(mid - SEG / 2), a1 = rad(mid + SEG / 2);
+      ctx.beginPath(); ctx.moveTo(cx, cy); ctx.arc(cx, cy, r, a0, a1); ctx.closePath();
+      ctx.fillStyle = i % 2 ? segB : segA; ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.lineWidth = 1; ctx.stroke();
+
+      ctx.save();
+      ctx.translate(cx, cy); ctx.rotate(rad(mid)); ctx.translate(r * 0.8, 0); ctx.rotate(Math.PI / 2);
+      ctx.fillStyle = '#ffffff';
+      ctx.font = '700 ' + Math.round(size * 0.058) + 'px "Figtree", system-ui, sans-serif';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(String(ORDER[i]), 0, 0);
+      ctx.restore();
+
+      var pa = rad(mid - SEG / 2);
+      ctx.beginPath(); ctx.arc(cx + Math.cos(pa) * (R - size * 0.015), cy + Math.sin(pa) * (R - size * 0.015), size * 0.006, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(255,255,255,0.85)'; ctx.fill();
+    }
+  }
+
+  function odds() {
+    var c = state.current;
+    $('oddsUp').textContent = Math.round((N - c) / N * 100) + '% chance';
+    $('oddsDown').textContent = Math.round((c - 1) / N * 100) + '% chance';
+  }
+
+  function setMsg(html) { $('msg').innerHTML = html; }
+
+  function render() {
+    var s = state;
+    $('scoreNum').innerHTML = s.score + '<small>/ ' + TARGET + '</small>';
+    $('scoreMeta').textContent = s.spins + (s.spins === 1 ? ' spin' : ' spins');
+    var pct = Math.min(100, s.score / TARGET * 100);
+    $('barFill').style.width = pct + '%';
+    $('bar').setAttribute('aria-valuenow', String(s.score));
+    $('hubNum').textContent = s.current === null ? '?' : s.current;
+
+    $('startRow').hidden = !(s.current === null && !s.over);
+    $('guessRow').hidden = !(s.current !== null && !s.over);
+    $('winBox').hidden = !s.over;
+    $('higherBtn').disabled = $('lowerBtn').disabled = $('spinBtn').disabled = s.spinning;
+    if (s.current !== null) odds();
+
+    var ul = $('chips');
+    if (!s.history.length) { ul.innerHTML = '<li class="empty">Nothing yet.</li>'; }
+    else {
+      ul.innerHTML = s.history.slice(0, 10).map(function (h) {
+        var cls = h.kind, txt = h.kind === 'tie' ? 'even' : (h.delta > 0 ? '+' + h.delta : (h.delta === 0 ? '0' : '−' + Math.abs(h.delta)));
+        if (h.kind === 'start') { cls = 'tie'; txt = 'start'; }
+        return '<li class="chip"><span>' + h.n + '</span><span class="d ' + cls + '">' + txt + '</span></li>';
+      }).join('');
+    }
+  }
+
+  function bumpScore() {
+    var el = $('scoreNum'); el.classList.remove('bump'); void el.offsetWidth; el.classList.add('bump');
+  }
+
+  function bestSpins() { try { var v = parseInt(localStorage.getItem('hlw-best'), 10); return isNaN(v) ? null : v; } catch (e) { return null; } }
+  function saveBest(n) { try { localStorage.setItem('hlw-best', String(n)); } catch (e) {} }
+
+  function resolve(n) {
+    var s = state;
+    s.spins++;
+    if (s.current === null) {
+      s.current = n;
+      s.history.unshift({ n: n, delta: 0, kind: 'start' });
+      setMsg('Starting number is <b>' + n + '</b>. Will the next spin be higher or lower?');
+    } else {
+      var prev = s.current, dir = n > prev ? 'up' : (n < prev ? 'down' : 'tie');
+      if (dir === 'tie') {
+        s.history.unshift({ n: n, delta: 0, kind: 'tie' });
+        setMsg('<b>' + n + '</b> again. No change.');
+      } else if ((dir === 'up') === (guess === 'higher')) {
+        s.score += n;
+        s.history.unshift({ n: n, delta: n, kind: 'good' });
+        setMsg('<b>' + n + '</b> is ' + (dir === 'up' ? 'higher' : 'lower') + ' than ' + prev + '. <span class="good"><b>+' + n + ' points</b></span>');
+        bumpScore();
+      } else {
+        var loss = Math.min(PENALTY, s.score);
+        s.score -= loss;
+        s.history.unshift({ n: n, delta: -loss, kind: 'bad' });
+        setMsg('<b>' + n + '</b> is ' + (dir === 'up' ? 'higher' : 'lower') + ' than ' + prev + '. <span class="bad"><b>−' + loss + ' points</b></span>');
+      }
+      s.current = n;
+    }
+    s.spinning = false;
+    if (s.score >= TARGET) {
+      s.over = true;
+      var best = bestSpins(), line = 'You got there in ' + s.spins + ' spins.';
+      if (best === null || s.spins < best) { saveBest(s.spins); line += best === null ? '' : ' That is a new best.'; }
+      else { line += ' Your best is ' + best + '.'; }
+      $('winText').textContent = line;
+      setMsg('<b>' + s.score + ' points.</b> You win.');
+    }
+    render();
+  }
+
+  function spin() {
+    if (state.spinning || state.over) return;
+    state.spinning = true;
+    render();
+    var k = Math.floor(Math.random() * N);
+    var jitter = (Math.random() - 0.5) * (SEG * 0.6);
+    var start = state.rot;
+    var cur = ((start % 360) + 360) % 360;
+    var delta = ((((-k * SEG + jitter) - cur) % 360) + 360) % 360 + 360 * (5 + Math.floor(Math.random() * 2));
+    var dur = reduce ? 500 : 4200;
+    var t0 = null;
+    function ease(t) { return 1 - Math.pow(1 - t, 4); }
+    function frame(ts) {
+      if (t0 === null) t0 = ts;
+      var t = Math.min(1, (ts - t0) / dur);
+      state.rot = start + delta * ease(t);
+      draw();
+      if (t < 1) requestAnimationFrame(frame);
+      else { state.rot = ((state.rot % 360) + 360) % 360; draw(); resolve(ORDER[k]); }
+    }
+    requestAnimationFrame(frame);
+  }
+
+  function reset() {
+    state.score = 0; state.current = null; state.spins = 0; state.spinning = false; state.over = false; state.history = []; guess = null;
+    setMsg('Spin the wheel to get your starting number.');
+    render();
+  }
+
+  $('spinBtn').addEventListener('click', spin);
+  $('higherBtn').addEventListener('click', function () { guess = 'higher'; setMsg('Spinning…'); spin(); });
+  $('lowerBtn').addEventListener('click', function () { guess = 'lower'; setMsg('Spinning…'); spin(); });
+  $('againBtn').addEventListener('click', reset);
+
+  window.addEventListener('resize', draw);
+  if (window.matchMedia) {
+    var mq = window.matchMedia('(prefers-color-scheme: dark)');
+    if (mq.addEventListener) mq.addEventListener('change', draw);
+  }
+  new MutationObserver(draw).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(draw);
+
+  render();
+  draw();
+})();
+</script>
