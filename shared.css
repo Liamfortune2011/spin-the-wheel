@@ -1,0 +1,122 @@
+/* Shared look for the game hub and the card games: tokens, page chrome, buttons and playing cards. */
+:root {
+  color-scheme: light;
+  --bg: #e9eff5;
+  --surface: #ffffff;
+  --fg: #12202c;
+  --muted: #566879;
+  --line: #cfdae5;
+  --seg-a: #0d6f7a;
+  --seg-b: #373c8a;
+  --seg-c: #6a3d8f;
+  --hi: #1f5fd6;
+  --lo: #f5b800;
+  --lo-ink: #9a6f00;
+  --up: #1c7a52;
+  --down: #b63d2a;
+  --card-bg: #fdfdfb;
+  --card-ink: #12202c;
+  --card-red: #c4281c;
+  --font-display: "Bowlby One", "Arial Black", Impact, sans-serif;
+  --font-body: "Figtree", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "DM Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0c151e; --surface: #14212d; --fg: #e8eef4; --muted: #8da1b3; --line: #26394a;
+    --seg-a: #0f7f8b; --seg-b: #4a50a8; --seg-c: #7a52a8; --hi: #2f6fe0; --lo-ink: #f5b800;
+    --up: #23895c; --down: #c2472f; --card-bg: #eef2f6;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0c151e; --surface: #14212d; --fg: #e8eef4; --muted: #8da1b3; --line: #26394a;
+  --seg-a: #0f7f8b; --seg-b: #4a50a8; --seg-c: #7a52a8; --hi: #2f6fe0; --lo-ink: #f5b800;
+  --up: #23895c; --down: #c2472f; --card-bg: #eef2f6;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html { background: var(--bg); }
+body {
+  margin: 0; background: var(--bg); color: var(--fg);
+  font-family: var(--font-body); font-size: 16px; line-height: 1.45;
+  padding-block: max(20px, env(safe-area-inset-top, 0px)) max(40px, env(safe-area-inset-bottom, 0px));
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+[hidden] { display: none !important; }
+button { font-family: inherit; }
+
+.wrap { max-width: 760px; margin-inline: auto; display: flex; flex-direction: column; gap: 18px; }
+.wrap > * { min-width: 0; }
+.top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.back { color: var(--muted); font-weight: 700; font-size: 14px; text-decoration: none; padding: 6px 0; }
+.back:hover { text-decoration: underline; }
+.back:focus-visible, .btn:focus-visible, .pc:focus-visible, .opp:focus-visible, .tile:focus-visible { outline: 3px solid var(--fg); outline-offset: 3px; }
+.ttl { font-family: var(--font-display); font-weight: 400; font-size: clamp(28px, 8vw, 40px); line-height: 1.05; margin: 0; text-wrap: balance; }
+.stat { font-family: var(--font-mono); font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.stat b { color: var(--fg); font-size: 16px; }
+.lab { margin: 0 0 8px; font-size: 12px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); font-weight: 700; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 18px; padding: 16px; }
+.msg { margin: 0; min-height: 2.9em; font-size: 16px; }
+.msg b { font-weight: 700; }
+.good { color: var(--up); } .bad { color: var(--down); }
+.rules { font-size: 13.5px; color: var(--muted); margin: 0; padding-top: 14px; border-top: 1px solid var(--line); max-width: 70ch; }
+
+.btn-row { display: flex; flex-wrap: wrap; gap: 12px; }
+.btn-row > .btn { flex: 1 1 130px; }
+.btn {
+  appearance: none; border: 0; cursor: pointer; color: #fff; font-weight: 700; font-size: 17px;
+  border-radius: 14px; padding: 12px 16px; min-height: 54px;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  transition: transform .12s ease, opacity .2s ease;
+}
+.btn:hover:not(:disabled) { transform: translateY(-2px); }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+.btn.primary { background: var(--fg); color: var(--bg); }
+.btn.ghost { background: transparent; color: var(--fg); border: 2px solid var(--fg); }
+.btn.blue { background: var(--hi); }
+.btn.gold { background: var(--lo); color: #1a1400; }
+.btn.purple { background: var(--seg-c); }
+.btn.teal { background: var(--seg-a); }
+
+.win { background: var(--surface); border: 2px solid var(--fg); border-radius: 16px; padding: 20px; display: flex; flex-direction: column; gap: 10px; }
+.win h2 { font-family: var(--font-display); font-weight: 400; font-size: 28px; margin: 0; line-height: 1.1; }
+.win p { margin: 0; color: var(--muted); }
+
+/* Playing cards. Sizes follow --cw, and everything inside scales with the card width. */
+.pc {
+  --cw: clamp(52px, 14vw, 68px);
+  appearance: none; padding: 0; margin: 0; font: inherit;
+  position: relative; display: block; flex: none; width: var(--cw); aspect-ratio: 5 / 7;
+  container-type: inline-size; background: var(--card-bg); color: var(--card-ink);
+  border: 1px solid rgba(18, 32, 44, .28); border-radius: 9%/6.5%; box-shadow: 0 2px 4px rgba(0, 0, 0, .18);
+  cursor: default; transition: transform .14s ease, box-shadow .14s ease, opacity .2s ease;
+}
+.pc.red { color: var(--card-red); }
+.pc.sm { --cw: 46px; }
+.pc.xs { --cw: 34px; }
+.pc .c { position: absolute; line-height: 1; font-weight: 700; font-family: var(--font-body); }
+.pc .c i { display: block; font-style: normal; text-align: center; }
+.pc .tl { left: 9cqw; top: 6cqw; font-size: 25cqw; }
+.pc .br { right: 9cqw; bottom: 6cqw; font-size: 25cqw; transform: rotate(180deg); }
+.pc .mid { inset: 0; display: grid; place-items: center; font-size: 54cqw; }
+.pc.back {
+  background: repeating-linear-gradient(45deg, var(--seg-a) 0 6px, var(--seg-b) 6px 12px);
+  border: 3px solid var(--card-bg);
+}
+.pc.back .c { display: none; }
+.pc.playable { cursor: pointer; transform: translateY(-8px); box-shadow: 0 0 0 3px var(--hi), 0 6px 10px rgba(0, 0, 0, .25); }
+.pc.playable:hover { transform: translateY(-12px); }
+.pc.dim { opacity: .42; }
+.pc.sel { transform: translateY(-14px); box-shadow: 0 0 0 3px var(--lo), 0 6px 10px rgba(0, 0, 0, .25); }
+.pc.deal { animation: dealin .28s ease both; }
+@keyframes dealin { from { opacity: 0; transform: translateY(-24px) scale(.9); } to { opacity: 1; } }
+.hand { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; align-items: flex-end; min-height: calc(var(--cw, 68px) * 1.4 + 14px); padding-top: 14px; }
+.hand .pc { --cw: clamp(48px, 13vw, 66px); }
+
+@media (prefers-reduced-motion: reduce) {
+  .pc, .btn { transition: none; }
+  .pc.deal { animation: none; }
+}

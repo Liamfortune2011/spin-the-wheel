@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Crazy Eights</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bowlby+One&family=Figtree:wght@400;500;700&family=DM+Mono:wght@500&display=swap">
+<link rel="stylesheet" href="shared.css">
+<style>
+/* Layout: bots across the top, the draw pile and discard pile in the middle, your hand underneath. */
+.opps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.opp { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 10px 12px; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.opp.on { border-color: var(--fg); box-shadow: 0 0 0 2px var(--fg); }
+.opp .nm { font-weight: 700; display: flex; justify-content: space-between; gap: 6px; }
+.opp .ct { font-family: var(--font-mono); font-size: 13px; color: var(--muted); }
+.opp .fan { display: flex; min-height: 40px; }
+.opp .fan .pc { --cw: 28px; margin-left: -14px; }
+.opp .fan .pc:first-child { margin-left: 0; }
+.center { display: flex; justify-content: center; align-items: center; gap: 28px; padding: 18px 12px; background: var(--surface); border: 1px solid var(--line); border-radius: 18px; flex-wrap: wrap; }
+.center .pc { --cw: clamp(64px, 18vw, 84px); }
+.pile { display: flex; flex-direction: column; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+.pile button.pc.playable { transform: translateY(-4px); }
+.suitnow { font-weight: 700; font-size: 15px; color: var(--fg); }
+.suitnow .s { font-size: 22px; vertical-align: -2px; }
+.suitnow .s.red { color: var(--card-red); }
+.picker { display: flex; gap: 10px; flex-wrap: wrap; }
+.picker .btn { flex: 1 1 70px; font-size: 26px; background: var(--card-bg); color: var(--card-ink); border: 1px solid rgba(18, 32, 44, .28); }
+.picker .btn.red { color: var(--card-red); }
+</style>
+</head>
+<body>
+<main class="wrap">
+  <header class="top">
+    <a class="back" href="./">&larr; All games</a>
+    <span class="stat" id="turnLbl"></span>
+  </header>
+  <h1 class="ttl">Crazy Eights</h1>
+
+  <section class="opps" id="opps" aria-label="Opponents"></section>
+
+  <section class="center" aria-label="Piles">
+    <div class="pile"><div id="stockBox"></div><span id="stockLbl"></span></div>
+    <div class="pile"><div id="discBox"></div><span class="suitnow" id="suitNow"></span></div>
+  </section>
+
+  <p class="msg" id="msg" aria-live="polite"></p>
+
+  <div class="panel" id="pickBox" hidden>
+    <div class="lab">Pick a suit for the eight</div>
+    <div class="picker" id="picker"></div>
+  </div>
+  <div class="btn-row"><button class="btn ghost" id="passBtn" type="button" hidden>Pass</button></div>
+
+  <section>
+    <div class="lab">Your hand</div>
+    <div class="hand" id="hand"></div>
+  </section>
+
+  <section class="win" id="win" hidden>
+    <h2 id="winTitle"></h2>
+    <p id="winText"></p>
+    <button class="btn primary" id="againBtn" type="button">Play again</button>
+  </section>
+
+  <p class="rules">Everyone gets five cards. On your turn, play a card that matches the top card by suit or by rank. An eight is wild: play it on anything and name the next suit. If you have nothing to play, draw from the pile until you can. The first player to empty their hand wins.</p>
+</main>
+
+<script src="cards.js"></script>
+<script>
+(function () {
+  'use strict';
+  var T = /fast/.test(location.search) ? 0.03 : 1;
+  var $ = function (id) { return document.getElementById(id); };
+  function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms * T); }); }
+  var NAMES = ['You', 'Nova', 'Rex', 'Juno'];
+
+  var stock, disc, hands, cur, suit, over, picking, run = 0, last;
+
+  function top() { return disc[disc.length - 1]; }
+  function playable(c) { return c.r === 8 || c.s === suit || c.r === top().r; }
+  function sortHand(h) { var o = { S: 0, H: 1, D: 2, C: 3 }; h.sort(function (a, b) { return o[a.s] - o[b.s] || a.r - b.r; }); }
+  function setMsg(h) { $('msg').innerHTML = h; }
+
+  function init() {
+    run++;
+    var d = Cards.shuffle(Cards.deck(1));
+    hands = [[], [], [], []];
+    for (var i = 0; i < 5; i++) for (var p = 0; p < 4; p++) hands[p].push(d.pop());
+    var s;
+    do { s = d.pop(); if (s.r === 8) d.unshift(s); } while (s.r === 8);
+    stock = d; disc = [s]; suit = s.s; cur = 0; over = false; picking = null; last = ['', '', '', ''];
+    hands.forEach(sortHand);
+    $('win').hidden = true;
+    render(); turn();
+  }
+
+  function drawFor(p) {
+    if (!stock.length && disc.length > 1) { var t = disc.pop(); stock = Cards.shuffle(disc); disc = [t]; }
+    if (!stock.length) return null;
+    var c = stock.pop(); hands[p].push(c); sortHand(hands[p]);
+    return c;
+  }
+
+  function render() {
+    var o = '';
+    for (var p = 1; p < 4; p++) {
+      var fan = '', n = Math.min(hands[p].length, 7);
+      for (var k = 0; k < n; k++) fan += '<div class="pc back"></div>';
+      o += '<div class="opp' + (cur === p && !over ? ' on' : '') + '"><div class="nm"><span>' + NAMES[p] + '</span><span class="ct">' + hands[p].length + '</span></div><div class="fan">' + fan + '</div></div>';
+    }
+    $('opps').innerHTML = o;
+
+    var yourTurn = cur === 0 && !over && !picking;
+    var any = hands[0].some(playable);
+    var mustDraw = yourTurn && !any && (stock.length || disc.length > 1);
+
+    $('stockBox').innerHTML = '';
+    var sc = mustDraw ? Cards.back('playable') : Cards.back();
+    var sn = document.createElement(mustDraw ? 'button' : 'div');
+    sn.className = sc.className; sn.setAttribute('aria-label', mustDraw ? 'Draw a card' : 'Draw pile');
+    if (mustDraw) { sn.type = 'button'; sn.addEventListener('click', humanDraw); }
+    $('stockBox').appendChild(sn);
+    $('stockLbl').textContent = 'Draw pile ' + (stock.length + Math.max(0, disc.length - 1));
+
+    $('discBox').innerHTML = '';
+    $('discBox').appendChild(Cards.el(top()));
+    var red = suit === 'H' || suit === 'D';
+    $('suitNow').innerHTML = 'Suit <span class="s' + (red ? ' red' : '') + '">' + Cards.SYM[suit] + '</span>';
+
+    var box = $('hand'); box.innerHTML = '';
+    hands[0].forEach(function (c) {
+      var ok = yourTurn && playable(c);
+      box.appendChild(Cards.el(c, { cls: ok ? 'playable' : (yourTurn ? 'dim' : ''), onClick: function () { humanPlay(c); } }));
+    });
+    $('passBtn').hidden = !(yourTurn && !any && !mustDraw);
+    $('pickBox').hidden = !picking;
+    $('turnLbl').textContent = over ? '' : (cur === 0 ? 'Your turn' : NAMES[cur] + ' is thinking');
+  }
+
+  function put(p, c, ns) {
+    hands[p] = hands[p].filter(function (x) { return x !== c; });
+    disc.push(c); suit = c.r === 8 ? ns : c.s;
+    last[p] = 'Played ' + Cards.short(c) + (c.r === 8 ? ', suit ' + Cards.SYM[ns] : '');
+    if (!hands[p].length) { over = true; render(); finish(p); return true; }
+    return false;
+  }
+
+  function humanPlay(c) {
+    if (cur !== 0 || over || picking || !hands[0].some(function (x) { return x === c; }) || !playable(c)) return;
+    if (c.r === 8) { picking = c; render(); setMsg('Choose the suit for your eight.'); return; }
+    if (!put(0, c)) next();
+  }
+  function humanDraw() {
+    if (cur !== 0 || over || picking) return;
+    var c = drawFor(0);
+    render();
+    if (c) {
+      if (playable(c)) setMsg('You drew ' + Cards.short(c) + '. You can play it.');
+      else setMsg('You drew ' + Cards.short(c) + '. Still nothing that fits. Draw again.');
+    }
+  }
+
+  function next() { if (over) return; cur = (cur + 1) % 4; turn(); }
+
+  async function turn() {
+    if (over) return;
+    var my = run, p = cur;
+    render();
+    if (p === 0) {
+      var any = hands[0].some(playable);
+      if (any) setMsg('Your move. Play a card that matches ' + Cards.short(top()) + (top().r === 8 ? ' (suit ' + Cards.SYM[suit] + ')' : '') + '.');
+      else if (stock.length || disc.length > 1) setMsg('Nothing fits. Click the draw pile.');
+      else setMsg('Nothing fits and the pile is empty. Pass.');
+      return;
+    }
+    await sleep(950);
+    if (my !== run || over) return;
+    var drew = 0;
+    for (;;) {
+      var pl = hands[p].filter(playable);
+      if (pl.length) {
+        var c = botChoice(p, pl), ns = null;
+        if (c.r === 8) ns = botSuit(p, c);
+        if (put(p, c, ns)) return;
+        setMsg('<b>' + NAMES[p] + '</b> played ' + Cards.short(c) + (c.r === 8 ? ' and chose ' + Cards.SYM[ns] : '') + (drew ? ' after drawing ' + drew + '.' : '.'));
+        break;
+      }
+      var d = drawFor(p);
+      if (!d) { last[p] = 'Passed'; setMsg('<b>' + NAMES[p] + '</b> could not play and passed.'); break; }
+      drew++; render(); await sleep(450);
+      if (my !== run || over) return;
+    }
+    next();
+  }
+
+  function botChoice(p, pl) {
+    var plain = pl.filter(function (c) { return c.r !== 8; });
+    if (!plain.length) return pl[0];
+    var count = {}; hands[p].forEach(function (c) { count[c.s] = (count[c.s] || 0) + 1; });
+    plain.sort(function (a, b) { return count[b.s] - count[a.s] || b.r - a.r; });
+    return plain[0];
+  }
+  function botSuit(p, eight) {
+    var count = { S: 0, H: 0, D: 0, C: 0 };
+    hands[p].forEach(function (c) { if (c !== eight && c.r !== 8) count[c.s]++; });
+    var best = 'S'; Cards.SUITS.forEach(function (s) { if (count[s] > count[best]) best = s; });
+    return count[best] === 0 ? eight.s : best;
+  }
+
+  function finish(p) {
+    var mine = p === 0;
+    $('winTitle').textContent = mine ? 'You win' : NAMES[p] + ' wins';
+    var left = [0, 1, 2, 3].filter(function (q) { return q !== p; }).map(function (q) { return NAMES[q] + ' ' + hands[q].length; });
+    $('winText').textContent = (mine ? 'You got rid of every card. ' : NAMES[p] + ' got rid of every card. ') + 'Cards left: ' + left.join(', ') + '.';
+    $('win').hidden = false; setMsg('');
+  }
+
+  // suit picker for eights
+  Cards.SUITS.forEach(function (s) {
+    var b = document.createElement('button');
+    b.type = 'button'; b.className = 'btn' + (s === 'H' || s === 'D' ? ' red' : '');
+    b.textContent = Cards.SYM[s]; b.setAttribute('aria-label', 'Choose ' + Cards.SNAME[s]);
+    b.addEventListener('click', function () {
+      if (!picking) return;
+      var c = picking; picking = null;
+      if (!put(0, c, s)) next();
+    });
+    $('picker').appendChild(b);
+  });
+  $('passBtn').addEventListener('click', function () { if (cur === 0 && !over) { last[0] = 'Passed'; next(); } });
+  $('againBtn').addEventListener('click', init);
+  init();
+})();
+</script>
+</body>
+</html>

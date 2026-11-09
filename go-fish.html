@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Go Fish</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bowlby+One&family=Figtree:wght@400;500;700&family=DM+Mono:wght@500&display=swap">
+<link rel="stylesheet" href="shared.css">
+<style>
+/* Layout: the three bots are the buttons you ask, then the log, then your hand where you pick the rank. */
+.opps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.opp {
+  appearance: none; text-align: left; cursor: default; color: var(--fg); font-size: 16px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 10px 12px; min-width: 0;
+  display: flex; flex-direction: column; gap: 4px;
+}
+.opp.ask { cursor: pointer; }
+.opp.ask:hover { border-color: var(--fg); }
+.opp.sel { border-color: var(--lo); box-shadow: 0 0 0 3px var(--lo); }
+.opp.on { border-color: var(--fg); }
+.opp:disabled { opacity: .6; }
+.opp .nm { font-weight: 700; }
+.opp .ct { font-family: var(--font-mono); font-size: 12.5px; color: var(--muted); }
+.opp .bk { font-size: 13px; color: var(--muted); min-height: 1.3em; }
+.mybooks { font-size: 14px; color: var(--muted); }
+.mybooks b { color: var(--fg); }
+.log { list-style: none; margin: 0; padding: 12px 14px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; display: flex; flex-direction: column; gap: 2px; font-size: 14px; min-height: 7.5em; }
+.log li { color: var(--muted); }
+.log li:first-child { color: var(--fg); font-weight: 500; }
+</style>
+</head>
+<body>
+<main class="wrap">
+  <header class="top">
+    <a class="back" href="./">&larr; All games</a>
+    <span class="stat" id="turnLbl"></span>
+  </header>
+  <h1 class="ttl">Go Fish</h1>
+
+  <section class="opps" id="opps" aria-label="Opponents"></section>
+  <p class="msg" id="msg" aria-live="polite"></p>
+  <ul class="log" id="log" aria-label="Recent moves"></ul>
+  <div class="btn-row"><button class="btn teal" id="askBtn" type="button" disabled>Ask</button></div>
+
+  <section>
+    <div class="lab">Your hand <span id="myBooks" class="mybooks"></span></div>
+    <div class="hand" id="hand"></div>
+  </section>
+
+  <section class="win" id="win" hidden>
+    <h2 id="winTitle"></h2>
+    <p id="winText"></p>
+    <button class="btn primary" id="againBtn" type="button">Play again</button>
+  </section>
+
+  <p class="rules">Everyone starts with five cards. On your turn, click a card in your hand to pick a rank, click the player you want to ask, then press Ask. If they hold that rank they hand over every card of it and you go again. If not, they say go fish and you draw from the pile. Drawing the rank you asked for also lets you go again. Four of a kind makes a book. When all 13 books are made, the player with the most books wins.</p>
+</main>
+
+<script src="cards.js"></script>
+<script>
+(function () {
+  'use strict';
+  var T = /fast/.test(location.search) ? 0.03 : 1;
+  var $ = function (id) { return document.getElementById(id); };
+  function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms * T); }); }
+  var NAMES = ['You', 'Nova', 'Rex', 'Juno'];
+
+  var stock, hands, books, cur, over, selRank, selTarget, log, mem, run = 0, busy;
+
+  function rname(r) { return r === 1 ? 'Aces' : r === 11 ? 'Jacks' : r === 12 ? 'Queens' : r === 13 ? 'Kings' : r + 's'; }
+  function sortHand(h) { h.sort(function (a, b) { return a.r - b.r || (a.s < b.s ? -1 : 1); }); }
+  function say(t) { log.unshift(t); if (log.length > 6) log.pop(); }
+  function setMsg(h) { $('msg').innerHTML = h; }
+  function totalBooks() { return books.reduce(function (a, b) { return a + b.length; }, 0); }
+
+  function init() {
+    run++;
+    var d = Cards.shuffle(Cards.deck(1));
+    hands = [[], [], [], []]; books = [[], [], [], []];
+    for (var i = 0; i < 5; i++) for (var p = 0; p < 4; p++) hands[p].push(d.pop());
+    stock = d; mem = [new Set(), new Set(), new Set(), new Set()];
+    cur = 0; over = false; selRank = null; selTarget = null; log = []; busy = false;
+    for (var q = 0; q < 4; q++) { hands[q].forEach(function () {}); checkBooks(q); sortHand(hands[q]); }
+    $('win').hidden = true;
+    say('The game begins. Pick a card, then pick who to ask.');
+    render(); turn();
+  }
+
+  function checkBooks(p) {
+    var cnt = {};
+    hands[p].forEach(function (c) { cnt[c.r] = (cnt[c.r] || 0) + 1; });
+    Object.keys(cnt).forEach(function (k) {
+      if (cnt[k] === 4) {
+        var r = +k;
+        hands[p] = hands[p].filter(function (c) { return c.r !== r; });
+        books[p].push(r);
+        say(NAMES[p] + (p === 0 ? ' made' : ' made') + ' a book of ' + rname(r) + '.');
+        mem.forEach(function (m) { m.delete(r); });
+      }
+    });
+  }
+
+  function gameDone() { return totalBooks() >= 13 || hands.every(function (h) { return !h.length; }); }
+
+  function render() {
+    var yourTurn = cur === 0 && !over && !busy;
+    var o = '';
+    for (var p = 1; p < 4; p++) {
+      var can = yourTurn && hands[p].length > 0;
+      o += '<button type="button" class="opp' + (can ? ' ask' : '') + (selTarget === p ? ' sel' : '') + (cur === p && !over ? ' on' : '') + '" data-p="' + p + '"' + (can ? '' : ' disabled') + '>' +
+        '<span class="nm">' + NAMES[p] + '</span><span class="ct">' + hands[p].length + ' cards</span>' +
+        '<span class="bk">' + books[p].length + (books[p].length === 1 ? ' book' : ' books') + (books[p].length ? ': ' + books[p].map(function (r) { return Cards.RANKS[r - 1]; }).join(' ') : '') + '</span></button>';
+    }
+    $('opps').innerHTML = o;
+    Array.prototype.forEach.call($('opps').querySelectorAll('.opp.ask'), function (b) {
+      b.addEventListener('click', function () { selTarget = parseInt(b.getAttribute('data-p'), 10); render(); });
+    });
+
+    var box = $('hand'); box.innerHTML = '';
+    hands[0].forEach(function (c) {
+      box.appendChild(Cards.el(c, {
+        cls: selRank === c.r ? 'sel' : (yourTurn ? 'playable' : ''),
+        onClick: function () { if (cur === 0 && !over && !busy) { selRank = c.r; render(); } }
+      }));
+    });
+    $('myBooks').textContent = books[0].length ? ' Books: ' + books[0].map(function (r) { return Cards.RANKS[r - 1]; }).join(' ') : '';
+
+    var ok = yourTurn && selRank !== null && selTarget !== null && hands[selTarget].length > 0;
+    $('askBtn').disabled = !ok;
+    $('askBtn').textContent = ok ? 'Ask ' + NAMES[selTarget] + ' for ' + rname(selRank) : 'Ask';
+    $('log').innerHTML = log.map(function (t) { return '<li>' + t + '</li>'; }).join('');
+    $('turnLbl').textContent = over ? '' : (cur === 0 ? 'Your turn' : NAMES[cur] + ' is asking');
+  }
+
+  function refill(p) {
+    if (hands[p].length || !stock.length) return;
+    for (var i = 0; i < 5 && stock.length; i++) hands[p].push(stock.pop());
+    sortHand(hands[p]); say(NAMES[p] + ' drew new cards.'); checkBooks(p);
+  }
+
+  // Resolve one ask. Returns true when the same player should go again.
+  function doAsk(p, q, r) {
+    say(NAMES[p] + ' asks ' + NAMES[q] + ' for ' + rname(r) + '.');
+    mem[p].add(r);
+    var got = hands[q].filter(function (c) { return c.r === r; });
+    if (got.length) {
+      hands[q] = hands[q].filter(function (c) { return c.r !== r; });
+      hands[p] = hands[p].concat(got); sortHand(hands[p]);
+      mem[q].delete(r);
+      say(NAMES[q] + ' hands over ' + got.length + (got.length === 1 ? ' card' : ' cards') + '.');
+      checkBooks(p);
+      return true;
+    }
+    say(NAMES[q] + ' says go fish.');
+    if (stock.length) {
+      var c = stock.pop(); hands[p].push(c); sortHand(hands[p]);
+      if (c.r === r) { say(p === 0 ? 'You drew ' + Cards.short(c) + ', the card you asked for. Go again.' : NAMES[p] + ' drew the card they asked for and goes again.'); checkBooks(p); return true; }
+      say(p === 0 ? 'You drew ' + Cards.short(c) + '.' : NAMES[p] + ' drew a card.');
+      checkBooks(p);
+    }
+    return false;
+  }
+
+  function humanAsk() {
+    if (cur !== 0 || over || busy || selRank === null || selTarget === null) return;
+    if (!hands[0].some(function (c) { return c.r === selRank; }) || !hands[selTarget].length) return;
+    var again = doAsk(0, selTarget, selRank);
+    selRank = null; selTarget = null;
+    afterAsk(0, again);
+  }
+
+  function afterAsk(p, again) {
+    if (gameDone()) { over = true; render(); finish(); return; }
+    if (!again) cur = (cur + 1) % 4;
+    turn();
+  }
+
+  async function turn() {
+    if (over) return;
+    var my = run, p = cur;
+    if (gameDone()) { over = true; render(); finish(); return; }
+    refill(p);
+    if (!hands[p].length) {
+      // nothing to play with and nothing to draw: skip
+      say(NAMES[p] + ' has no cards and is skipped.'); cur = (cur + 1) % 4; render(); await sleep(400);
+      if (my === run) turn();
+      return;
+    }
+    render();
+    if (p === 0) {
+      var targets = [1, 2, 3].filter(function (q) { return hands[q].length; });
+      if (!targets.length) { cur = 1; turn(); return; }
+      setMsg('Your turn. Click a card in your hand, then click who to ask.');
+      return;
+    }
+    busy = true; setMsg('<b>' + NAMES[p] + '</b> is choosing…'); render();
+    await sleep(1100);
+    if (my !== run || over) return;
+    busy = false;
+    var ch = botChoose(p);
+    if (!ch) { cur = (cur + 1) % 4; turn(); return; }
+    var again = doAsk(p, ch.q, ch.r);
+    render();
+    await sleep(700);
+    if (my !== run || over) return;
+    afterAsk(p, again);
+  }
+
+  function botChoose(p) {
+    var targets = [0, 1, 2, 3].filter(function (q) { return q !== p && hands[q].length; });
+    if (!targets.length) return null;
+    var cnt = {}; hands[p].forEach(function (c) { cnt[c.r] = (cnt[c.r] || 0) + 1; });
+    var ranks = Object.keys(cnt).map(Number);
+    // prefer a rank someone is known to hold, then the rank we hold most
+    var best = null, bs = -1;
+    ranks.forEach(function (r) {
+      var known = targets.filter(function (q) { return mem[q].has(r); });
+      var sc = cnt[r] * 2 + (known.length ? 5 : 0) + Math.random();
+      if (sc > bs) { bs = sc; best = { r: r, known: known }; }
+    });
+    var q = best.known.length ? best.known[Math.floor(Math.random() * best.known.length)] : targets[Math.floor(Math.random() * targets.length)];
+    return { r: best.r, q: q };
+  }
+
+  function finish() {
+    var top = Math.max.apply(null, books.map(function (b) { return b.length; }));
+    var winners = [0, 1, 2, 3].filter(function (p) { return books[p].length === top; });
+    var mine = winners.indexOf(0) >= 0;
+    $('winTitle').textContent = winners.length > 1 ? (mine ? 'You tied for the win' : 'A tie') : (mine ? 'You win' : NAMES[winners[0]] + ' wins');
+    $('winText').textContent = 'Books: ' + [0, 1, 2, 3].map(function (p) { return NAMES[p] + ' ' + books[p].length; }).join(', ') + '.';
+    $('win').hidden = false; setMsg('');
+  }
+
+  $('askBtn').addEventListener('click', humanAsk);
+  $('againBtn').addEventListener('click', init);
+  init();
+})();
+</script>
+</body>
+</html>

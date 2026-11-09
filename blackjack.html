@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Twenty-One</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bowlby+One&family=Figtree:wght@400;500;700&family=DM+Mono:wght@500&display=swap">
+<link rel="stylesheet" href="shared.css">
+<style>
+/* Layout: dealer on top, you below, then either the betting chips or the action buttons. */
+.seat h3 { display: flex; align-items: baseline; gap: 10px; margin: 0 0 4px; font-size: 12px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.seat h3 .tot { font-family: var(--font-mono); font-size: 15px; color: var(--fg); letter-spacing: 0; text-transform: none; }
+.table .hand { --cw: clamp(56px, 16vw, 74px); }
+.table .hand .pc { --cw: clamp(56px, 16vw, 74px); }
+.bet-amt { font-family: var(--font-display); font-size: 40px; line-height: 1; font-variant-numeric: tabular-nums; }
+.chip-row { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; margin: 14px 0; }
+.chipb {
+  appearance: none; cursor: pointer; width: 64px; height: 64px; border-radius: 50%; border: 4px dashed rgba(255, 255, 255, .75);
+  color: #fff; font-weight: 700; font-size: 18px; font-family: var(--font-mono); box-shadow: 0 3px 0 rgba(0, 0, 0, .25);
+  transition: transform .12s ease;
+}
+.chipb:hover:not(:disabled) { transform: translateY(-3px); }
+.chipb:disabled { opacity: .4; cursor: not-allowed; }
+.chipb:focus-visible { outline: 3px solid var(--fg); outline-offset: 3px; }
+.chipb[data-v="10"] { background: var(--seg-a); }
+.chipb[data-v="20"] { background: var(--seg-b); }
+.chipb[data-v="50"] { background: var(--down); }
+.chipb[data-v="100"] { background: #2a3744; }
+</style>
+</head>
+<body>
+<main class="wrap">
+  <header class="top">
+    <a class="back" href="./">&larr; All games</a>
+    <span class="stat">Chips <b id="chips">500</b></span>
+  </header>
+  <h1 class="ttl">Twenty-One</h1>
+
+  <section class="panel table" aria-label="Table">
+    <div class="seat">
+      <h3>Dealer <span class="tot" id="dTotal"></span></h3>
+      <div class="hand" id="dHand"></div>
+    </div>
+    <div class="seat">
+      <h3>You <span class="tot" id="pTotal"></span></h3>
+      <div class="hand" id="pHand"></div>
+    </div>
+  </section>
+
+  <p class="msg" id="msg" aria-live="polite"></p>
+
+  <section class="panel" id="betBox">
+    <div class="lab">Your bet</div>
+    <div class="bet-amt" id="betAmt">0</div>
+    <div class="chip-row" id="chipRow">
+      <button class="chipb" type="button" data-v="10" aria-label="Add 10">10</button>
+      <button class="chipb" type="button" data-v="20" aria-label="Add 20">20</button>
+      <button class="chipb" type="button" data-v="50" aria-label="Add 50">50</button>
+      <button class="chipb" type="button" data-v="100" aria-label="Add 100">100</button>
+    </div>
+    <div class="btn-row">
+      <button class="btn ghost" id="clearBtn" type="button">Clear bet</button>
+      <button class="btn primary" id="dealBtn" type="button">Deal</button>
+    </div>
+  </section>
+
+  <div class="btn-row" id="actBox" hidden>
+    <button class="btn blue" id="hitBtn" type="button">Hit</button>
+    <button class="btn gold" id="standBtn" type="button">Stand</button>
+    <button class="btn purple" id="doubleBtn" type="button">Double</button>
+  </div>
+
+  <div class="btn-row" id="againBox" hidden>
+    <button class="btn primary" id="againBtn" type="button">Next hand</button>
+  </div>
+
+  <p class="rules">Get closer to 21 than the dealer without going over. Aces count 1 or 11, face cards count 10. The dealer draws to 16 and stands on every 17. Blackjack pays 3 to 2. You can double your bet on your first two cards for one more card. Bets are 10 and up, and the game uses a four-deck shoe. Your chips are saved on this device.</p>
+</main>
+
+<script src="cards.js"></script>
+<script>
+(function () {
+  'use strict';
+  var T = /fast/.test(location.search) ? 0.03 : 1;
+  var $ = function (id) { return document.getElementById(id); };
+  function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms * T); }); }
+
+  var START = 500, MIN = 10;
+  var shoe = [], chips = START, bet = 0, lastBet = 20, P = [], D = [], phase = 'bet', hole = true;
+  try { var sv = parseInt(localStorage.getItem('bj-chips'), 10); if (sv >= MIN) chips = sv; } catch (e) {}
+  function save() { try { localStorage.setItem('bj-chips', String(chips)); } catch (e) {} }
+
+  function draw() { if (shoe.length < 20) shoe = Cards.shuffle(Cards.deck(4)); return shoe.pop(); }
+  function val(h) {
+    var t = 0, a = 0;
+    h.forEach(function (c) { if (c.r === 1) { a++; t += 11; } else t += Math.min(10, c.r); });
+    while (t > 21 && a > 0) { t -= 10; a--; }
+    return { t: t, soft: a > 0 };
+  }
+  function isBJ(h) { return h.length === 2 && val(h).t === 21; }
+  function msg(h) { $('msg').innerHTML = h; }
+
+  function fill(id, cards, hideSecond) {
+    var box = $(id), prev = parseInt(box.getAttribute('data-n') || '0', 10);
+    box.innerHTML = '';
+    cards.forEach(function (c, i) {
+      var n = (hideSecond && i === 1) ? Cards.back(i >= prev ? 'deal' : '') : Cards.el(c, { cls: i >= prev ? 'deal' : '' });
+      box.appendChild(n);
+    });
+    box.setAttribute('data-n', String(cards.length));
+  }
+
+  function render() {
+    $('chips').textContent = chips;
+    fill('pHand', P, false); fill('dHand', D, hole);
+    var pv = val(P), dv = val(D);
+    $('pTotal').textContent = P.length ? (pv.soft && pv.t < 21 ? 'Soft ' : '') + pv.t : '';
+    $('dTotal').textContent = D.length && !hole ? String(dv.t) : '';
+    $('betBox').hidden = phase !== 'bet';
+    $('actBox').hidden = phase !== 'play';
+    $('againBox').hidden = phase !== 'done';
+    $('betAmt').textContent = bet;
+    $('dealBtn').disabled = bet < MIN;
+    $('clearBtn').disabled = bet === 0;
+    Array.prototype.forEach.call(document.querySelectorAll('.chipb'), function (b) { b.disabled = bet + parseInt(b.getAttribute('data-v'), 10) > chips; });
+    $('doubleBtn').disabled = !(phase === 'play' && P.length === 2 && chips >= bet);
+    $('againBtn').textContent = chips < MIN ? 'Start over with ' + START + ' chips' : 'Next hand';
+  }
+
+  async function deal() {
+    if (phase !== 'bet' || bet < MIN || bet > chips) return;
+    lastBet = bet; chips -= bet; save();
+    phase = 'deal'; P = []; D = []; hole = true; msg('Dealing…'); render();
+    await sleep(250); P.push(draw()); render();
+    await sleep(300); D.push(draw()); render();
+    await sleep(300); P.push(draw()); render();
+    await sleep(300); D.push(draw()); render();
+    await sleep(300);
+    if (isBJ(P) || isBJ(D)) { await finish(); return; }
+    phase = 'play'; msg('Your move. Hit, stand or double.'); render();
+  }
+
+  async function finish() {
+    hole = false; phase = 'dealer'; render();
+    if (val(P).t <= 21 && !isBJ(P) && !isBJ(D)) {
+      msg('Dealer plays…');
+      while (val(D).t < 17) { await sleep(650); D.push(draw()); render(); }
+    }
+    settle();
+  }
+
+  function settle() {
+    var pv = val(P).t, dv = val(D).t, text, pay = 0;
+    if (pv > 21) text = '<span class="bad"><b>Bust.</b></span> You lose ' + bet + '.';
+    else if (isBJ(P) && isBJ(D)) { pay = bet; text = 'Two blackjacks. Push, your bet comes back.'; }
+    else if (isBJ(P)) { pay = bet * 2.5; text = '<span class="good"><b>Blackjack!</b></span> You win ' + bet * 1.5 + '.'; }
+    else if (isBJ(D)) text = '<span class="bad"><b>Dealer has blackjack.</b></span> You lose ' + bet + '.';
+    else if (dv > 21) { pay = bet * 2; text = '<span class="good"><b>Dealer busts with ' + dv + '.</b></span> You win ' + bet + '.'; }
+    else if (pv > dv) { pay = bet * 2; text = '<span class="good"><b>' + pv + ' beats ' + dv + '.</b></span> You win ' + bet + '.'; }
+    else if (pv < dv) text = '<span class="bad"><b>Dealer wins ' + dv + ' to ' + pv + '.</b></span> You lose ' + bet + '.';
+    else { pay = bet; text = 'Push at ' + pv + '. Your bet comes back.'; }
+    chips += pay; save();
+    if (chips < MIN) text += ' You are out of chips.';
+    phase = 'done'; msg(text); render();
+  }
+
+  function hit() {
+    if (phase !== 'play') return;
+    P.push(draw()); render();
+    var v = val(P).t;
+    if (v >= 21) finish();
+  }
+  function stand() { if (phase === 'play') finish(); }
+  function dbl() {
+    if (phase !== 'play' || P.length !== 2 || chips < bet) return;
+    chips -= bet; bet *= 2; save();
+    P.push(draw()); render();
+    finish();
+  }
+  function next() {
+    if (phase !== 'done') return;
+    if (chips < MIN) { chips = START; save(); }
+    bet = Math.min(lastBet, Math.floor(chips / 10) * 10);
+    P = []; D = []; hole = true; phase = 'bet';
+    msg('Place your bet and press Deal.'); render();
+  }
+
+  Array.prototype.forEach.call(document.querySelectorAll('.chipb'), function (b) {
+    b.addEventListener('click', function () {
+      var v = parseInt(b.getAttribute('data-v'), 10);
+      if (phase === 'bet' && bet + v <= chips) { bet += v; render(); }
+    });
+  });
+  $('clearBtn').addEventListener('click', function () { if (phase === 'bet') { bet = 0; render(); } });
+  $('dealBtn').addEventListener('click', deal);
+  $('hitBtn').addEventListener('click', hit);
+  $('standBtn').addEventListener('click', stand);
+  $('doubleBtn').addEventListener('click', dbl);
+  $('againBtn').addEventListener('click', next);
+
+  bet = Math.min(lastBet, Math.floor(chips / 10) * 10);
+  msg('Place your bet and press Deal.');
+  render();
+})();
+</script>
+</body>
+</html>
