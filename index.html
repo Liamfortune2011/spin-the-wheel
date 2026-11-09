@@ -20,6 +20,7 @@
   --seg-a: #0d6f7a;
   --seg-b: #373c8a;
   --seg-c: #6a3d8f;
+  --seg-eq: #8a99a8;
   --rim: #12202c;
   --hub: #ffffff;
   --hub-fg: #12202c;
@@ -38,14 +39,14 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --bg: #0c151e; --surface: #14212d; --fg: #e8eef4; --muted: #8da1b3; --line: #26394a;
-    --seg-a: #0f7f8b; --seg-b: #4a50a8; --seg-c: #7a52a8; --rim: #05090d; --hub: #0c151e; --hub-fg: #e8eef4;
+    --seg-a: #0f7f8b; --seg-b: #4a50a8; --seg-c: #7a52a8; --seg-eq: #3a4a59; --rim: #05090d; --hub: #0c151e; --hub-fg: #e8eef4;
     --pointer: #ff5a47; --up: #23895c; --down: #c2472f; --hi: #2f6fe0; --lo-ink: #f5b800;
     color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
   --bg: #0c151e; --surface: #14212d; --fg: #e8eef4; --muted: #8da1b3; --line: #26394a;
-  --seg-a: #0f7f8b; --seg-b: #4a50a8; --seg-c: #7a52a8; --rim: #05090d; --hub: #0c151e; --hub-fg: #e8eef4;
+  --seg-a: #0f7f8b; --seg-b: #4a50a8; --seg-c: #7a52a8; --seg-eq: #3a4a59; --rim: #05090d; --hub: #0c151e; --hub-fg: #e8eef4;
   --pointer: #ff5a47; --up: #23895c; --down: #c2472f; --hi: #2f6fe0; --lo-ink: #f5b800;
   color-scheme: dark;
 }
@@ -468,6 +469,8 @@ label.lab { display: block; font-size: 12px; letter-spacing: .1em; text-transfor
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, size, size);
     var cx = size / 2, cy = size / 2, R = size / 2 - 4, r = R - size * 0.03;
     var segA = css('--seg-a'), segB = css('--seg-b'), segC = css('--seg-c'), rim = css('--rim');
+    var hiC = css('--hi'), loC = css('--lo'), eqC = css('--seg-eq');
+    var ref = S && S.current != null ? S.current : null;
     var M = wheelNums.length || 1, seg = 360 / M;
     ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.fillStyle = rim; ctx.fill();
     var fs = Math.round(size * Math.min(0.1, 0.058 * Math.sqrt(20 / M)));
@@ -475,12 +478,17 @@ label.lab { display: block; font-size: 12px; letter-spacing: .1em; text-transfor
       var mid = -90 + i * seg + rot, a0 = rad(mid - seg / 2), a1 = rad(mid + seg / 2);
       var dim = landed !== null && wheelNums[i] === landed;
       ctx.beginPath(); ctx.moveTo(cx, cy); ctx.arc(cx, cy, r, a0, a1); ctx.closePath();
-      ctx.fillStyle = (M % 2 === 1 && M > 1 && i === M - 1) ? segC : (i % 2 ? segB : segA); ctx.fill();
+      var num = wheelNums[i], onYellow = false;
+      if (ref === null) ctx.fillStyle = (M % 2 === 1 && M > 1 && i === M - 1) ? segC : (i % 2 ? segB : segA);
+      else if (num > ref) ctx.fillStyle = hiC;
+      else if (num < ref) { ctx.fillStyle = loC; onYellow = true; }
+      else ctx.fillStyle = eqC;
+      ctx.fill();
       if (dim) { ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fill(); }
       ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.lineWidth = 1; ctx.stroke();
       ctx.save();
       ctx.translate(cx, cy); ctx.rotate(rad(mid)); ctx.translate(r * 0.8, 0); ctx.rotate(Math.PI / 2);
-      ctx.fillStyle = dim ? 'rgba(255,255,255,0.45)' : '#ffffff';
+      ctx.fillStyle = dim ? 'rgba(255,255,255,0.45)' : (onYellow ? '#1a1400' : '#ffffff');
       ctx.font = '700 ' + fs + 'px "Figtree", system-ui, sans-serif';
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.fillText(String(wheelNums[i]), 0, 0);
