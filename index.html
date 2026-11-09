@@ -361,7 +361,7 @@ label.lab { display: block; font-size: 12px; letter-spacing: .1em; text-transfor
     }, 1200 + Math.random() * Math.max(0, GUESS_MS - 5500));
   };
   Engine.prototype.newRound = function () {
-    this.round++; this.turn = 0;
+    this.round++; this.turn = 0; this.wheel = fullWheel(null);
     this.players.forEach(function (p) { p.pot = 0; p.status = 'active'; p.guess = null; p.shown = null; p.delta = null; p.kind = null; });
   };
   Engine.prototype.beginTurn = function () {
@@ -667,8 +667,8 @@ label.lab { display: block; font-size: 12px; letter-spacing: .1em; text-transfor
         else if (m.kind === 'tie') resultMsg = '<b>' + n + '</b> again. No change.';
         else resultMsg = '<b>' + n + '</b> came up.';
       } else resultMsg = '<b>' + n + '</b> came up. You are sitting out this round.';
-      if (msg.roundOver) resultMsg += ' <b>Round over.</b> Everyone has busted or banked.';
-      if (msg.refilled) resultMsg += ' The wheel refills.';
+      if (msg.roundOver) resultMsg += ' <b>Round over.</b> Everyone has busted or banked, and the wheel refills with all 20 numbers.';
+      if (msg.refilled && !msg.roundOver) resultMsg += ' The wheel refills.';
       if (pending) { var p = pending; pending = null; applyState(p); } else render();
     }
     requestAnimationFrame(frame);
