@@ -195,7 +195,7 @@ label.lab { display: block; font-size: 12px; letter-spacing: .1em; text-transfor
   <a class="backlink" href="./">&larr; All games</a>
   <header>
     <h1>Higher Lower Wheel</h1>
-    <p class="lead">Eight seats, one wheel. Everyone bets higher or lower on the next spin. First to 120 points wins. Empty seats are filled by bots.</p>
+    <p class="lead">Eight seats, one wheel. Everyone bets higher or lower on the next spin. Reach 120 banked points and have the highest score when the round ends to win. Empty seats are filled by bots.</p>
   </header>
   <div class="card">
     <div class="join-grid">
@@ -302,11 +302,15 @@ label.lab { display: block; font-size: 12px; letter-spacing: .1em; text-transfor
   }
   function resetPlayer(p) { p.bank = 0; p.pot = 0; p.free = FREE_SPINS; p.status = 'active'; p.guess = null; p.shown = null; p.delta = null; p.kind = null; }
   function fullWheel(without) { return NUMS.filter(function (n) { return n !== without; }); }
-  function botAction(p, c, wheel) {
+  function botAction(p, c, wheel, topBank) {
     var len = wheel.length || 1, hi = 0, lo = 0, nh = 0, nl = 0;
     wheel.forEach(function (n) { if (n > c) { hi += n; nh++; } else if (n < c) { lo += n; nl++; } });
     var up = hi / len - p.pot * nl / len, dn = lo / len - p.pot * nh / len;
-    if (p.pot > 0 && (p.bank + p.pot >= TARGET || (p.pot >= p.th && Math.random() < 0.85))) return 'bank';
+    if (p.pot > 0) {
+      var total = p.bank + p.pot;
+      if (topBank >= TARGET) { if (total > topBank) return 'bank'; }
+      else if (total >= TARGET || (p.pot >= p.th && Math.random() < 0.85)) return 'bank';
+    }
     if (p.free > 0 && Math.random() < 0.15) return 'free';
     var best = up >= dn ? 'higher' : 'lower';
     return Math.random() < 0.8 ? best : (best === 'higher' ? 'lower' : 'higher');
@@ -321,6 +325,7 @@ label.lab { display: block; font-size: 12px; letter-spacing: .1em; text-transfor
   Engine.prototype.later = function (fn, ms) { var t = setTimeout(fn, ms); this.timers.push(t); return t; };
   Engine.prototype.clear = function () { this.timers.forEach(clearTimeout); this.timers = []; };
   Engine.prototype.stop = function () { this.clear(); this.phase = 'stopped'; };
+  Engine.prototype.topBank = function () { return Math.max.apply(null, this.players.map(function (p) { return p.bank; })); };
   Engine.prototype.active = function () { return this.players.filter(function (p) { return p.status === 'active'; }); };
   Engine.prototype.view = function () {
     return {
@@ -360,7 +365,7 @@ label.lab { display: block; font-size: 12px; letter-spacing: .1em; text-transfor
   Engine.prototype.scheduleBot = function (p) {
     var self = this;
     this.later(function () {
-      if (self.phase === 'guessing' && p.status === 'active' && !p.guess) { p.guess = botAction(p, self.current, self.wheel); self.push(); self.check(); }
+      if (self.phase === 'guessing' && p.status === 'active' && !p.guess) { p.guess = botAction(p, self.current, self.wheel, self.topBank()); self.push(); self.check(); }
     }, 1200 + Math.random() * Math.max(0, GUESS_MS - 5500));
   };
   Engine.prototype.newRound = function () {
@@ -416,11 +421,11 @@ label.lab { display: block; font-size: 12px; letter-spacing: .1em; text-transfor
       });
     }
     this.current = n;
-    var top = Math.max.apply(null, this.players.map(function (p) { return p.bank; }));
-    this.winners = top >= TARGET ? this.players.filter(function (p) { return p.bank === top; }).map(function (p) { return p.id; }) : [];
-    var roundOver = !this.winners.length && this.active().length === 0;
+    // Reaching the target does not end the game on its own. The round plays on, and when it ends the highest bank wins.
+    var top = this.topBank(), roundOver = this.active().length === 0;
+    this.winners = roundOver && top >= TARGET ? this.players.filter(function (p) { return p.bank === top; }).map(function (p) { return p.id; }) : [];
     var after = this.view(); after.phase = 'resolved';
-    this.emit({ t: 'spin', k: k, jitter: jitter, turns: turns, dur: SPIN_MS, reveal: reveal, first: !!first, n: n, prev: prev, before: before, refilled: refilled, roundOver: roundOver, after: after });
+    this.emit({ t: 'spin', k: k, jitter: jitter, turns: turns, dur: SPIN_MS, reveal: reveal, first: !!first, n: n, prev: prev, before: before, refilled: refilled, roundOver: roundOver, gameOver: this.winners.length > 0, after: after });
     this.later(function () {
       if (self.winners.length) { self.players.forEach(function (p) { p.pot = 0; }); self.phase = 'over'; self.push(); return; }
       if (roundOver) self.newRound();
@@ -448,7 +453,7 @@ label.lab { display: block; font-size: 12px; letter-spacing: .1em; text-transfor
   var wheelNums = NUMS.slice(), landed = null;
   var deadlineLocal = 0, resultMsg = '', pickedLocal = null;
 
-  $('rulesText').textContent = 'A game is a series of rounds, and each round is a run of spins. On every spin, each player still in the round picks higher or lower than the current number, takes a free spin (' + FREE_SPINS + ' per game), or banks. A right pick adds the number that lands to your pot. A wrong pick busts you: your pot is wiped, your score goes back to what it was at the start of the round, and you sit out until the round ends. Banking locks your pot into your score and also sits you out. A round ends when everyone has busted or banked, and then a new one starts. Numbers that land are removed from the wheel. First to ' + TARGET + ' banked points wins. If the 12 seconds run out, you bank automatically.';
+  $('rulesText').textContent = 'A game is a series of rounds, and each round is a run of spins. On every spin, each player still in the round picks higher or lower than the current number, takes a free spin (' + FREE_SPINS + ' per game), or banks. A right pick adds the number that lands to your pot. A wrong pick busts you: your pot is wiped, your score goes back to what it was at the start of the round, and you sit out until the round ends. Banking locks your pot into your score and also sits you out. A round ends when everyone has busted or banked, and then a new one starts. Numbers that land are removed from the wheel. Once anyone banks ' + TARGET + ' or more, the round plays on, and anyone still in can bank a higher total to take the lead. When that round ends, the highest banked score wins. If the 12 seconds run out, you bank automatically.';
 
   function esc(s) { return String(s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
   function getName() { var v = $('nameIn').value.trim().slice(0, 14) || 'Player'; try { localStorage.setItem('hlw-name', v); } catch (e) {} return v; }
@@ -537,7 +542,8 @@ label.lab { display: block; font-size: 12px; letter-spacing: .1em; text-transfor
     var m = me();
     if (S.phase === 'over') {
       var names = S.winners.map(function (id) { var p = S.players.find(function (q) { return q.id === id; }); return p ? esc(p.name) : ''; });
-      return '<b>' + names.join(' and ') + '</b> banked ' + TARGET + '.';
+      var topB = S.players.reduce(function (a, p) { return Math.max(a, p.bank); }, 0);
+      return '<b>' + names.join(' and ') + '</b> won with ' + topB + ' banked.';
     }
     if (S.phase === 'guessing') {
       var playing = S.players.filter(function (p) { return p.status === 'active'; });
@@ -548,10 +554,17 @@ label.lab { display: block; font-size: 12px; letter-spacing: .1em; text-transfor
         var waiting = playing.filter(function (p) { return !p.locked; }).length;
         return 'Locked in. ' + (waiting ? waiting + ' still deciding.' : 'Spinning now.');
       }
-      return intro + 'Next spin: higher or lower than <b>' + S.current + '</b>?';
+      return intro + 'Next spin: higher or lower than <b>' + S.current + '</b>?' + leaderNote(S);
     }
     if (S.phase === 'spinning') return 'Spinning\u2026';
     return resultMsg;
+  }
+
+  function leaderNote(s) {
+    var top = -1, who = null;
+    s.players.forEach(function (p) { if (p.bank > top) { top = p.bank; who = p; } });
+    if (top < TARGET || !who) return '';
+    return ' <b>' + esc(who.name) + '</b> has banked ' + top + ', over ' + TARGET + '. Bank more than that before the round ends to win.';
   }
 
   function actionIcon(a) { return a === 'higher' ? ICON_UP : a === 'lower' ? ICON_DOWN : a === 'free' ? ICON_STAR : ICON_BANK; }
@@ -670,8 +683,9 @@ label.lab { display: block; font-size: 12px; letter-spacing: .1em; text-transfor
         else if (m.kind === 'tie') resultMsg = '<b>' + n + '</b> again. No change.';
         else resultMsg = '<b>' + n + '</b> came up.';
       } else resultMsg = '<b>' + n + '</b> came up. You are sitting out this round.';
-      if (msg.roundOver) resultMsg += ' <b>Round over.</b> Everyone has busted or banked, and the wheel refills with all 20 numbers.';
+      if (msg.roundOver) resultMsg += msg.gameOver ? ' <b>Round over.</b>' : ' <b>Round over.</b> Everyone has busted or banked, and the wheel refills with all 20 numbers.';
       if (msg.refilled && !msg.roundOver) resultMsg += ' The wheel refills.';
+      var lead = leaderNote(S); if (lead && !msg.gameOver) resultMsg += lead;
       if (pending) { var p = pending; pending = null; applyState(p); } else render();
     }
     requestAnimationFrame(frame);
